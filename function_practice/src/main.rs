@@ -42,6 +42,6 @@ fn five() -> i32 {
 
 // return values, cont.
 fn twentyfive() -> i32 {
-    // like many in the c family and more, you can do "return {value};"
+    // like many in the c family and more, you can do "return <value>;"
     return 25;
 }

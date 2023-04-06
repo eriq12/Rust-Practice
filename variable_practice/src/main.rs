@@ -20,4 +20,10 @@ fn main() {
     let tup : (i32, f64, u8) = (500, 6.4, 1);
     let (x, y, z) = tup;
     println!("The values are {x} {y} {z}");
+
+    // array declaration/definition
+    let a:[i32;5] = [1,2,3,4,5];
+    let first = a[0];
+    let second:i32 = a[1];
+    println!("The first and second values in the array a are {first} and {second}, respectively.");
 }
