@@ -69,4 +69,15 @@ fn main() {
         println!("{num}!");
     }
     println!("LEFTOFF!!!");
+
+    let mut num_twos:i32 = 0;
+    let mut num_fives:i32 = 0;
+    let mut power:u32 = 1;
+    while 2_i32.pow(power) <= 100{
+        num_twos += 100 / 2_i32.pow(power);
+        num_fives += 100 / 5_i32.pow(power);
+        power += 1;
+    }
+    println!("From prime factorization, there are {num_twos} 2s and {num_fives} 5s.");
+
 }
