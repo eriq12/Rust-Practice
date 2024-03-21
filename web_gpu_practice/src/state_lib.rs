@@ -36,7 +36,7 @@ impl State {
         let adapter = instance.request_adapter(
             &wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
-                compatibile_surface: Some(&surface),
+                compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
             },
         ).await.unwrap();
