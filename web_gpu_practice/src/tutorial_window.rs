@@ -17,6 +17,7 @@ struct State {
      *  unsafe references to the window's resources.
      */
     window: Window,
+    clearColor: wgpu::Color,
 }
 
 impl State {
@@ -80,6 +81,12 @@ impl State {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
+        let clearColor = wgpu::Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        };
         surface.configure(&device, &config);
         Self {
             window,
@@ -88,6 +95,7 @@ impl State {
             queue,
             config,
             size,
+            clearColor,
         }
     }
 
@@ -96,19 +104,68 @@ impl State {
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        todo!()
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+            self.config.width = new_size.width;
+            self.config.height = new_size.height;
+            self.surface.configure(&self.device, &self.config);
+        }
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        todo!()
+        match event {
+            WindowEvent::CursorMoved { position, ..} => {
+                let green : f64 = position.x as f64 / self.config.width as f64;
+                let blue : f64 = position.y as f64 / self.config.height as f64;
+                self.clearColor.g = green;
+                self.clearColor.b = blue;
+                true
+            }
+            _ => false,
+        }
     }
 
     fn update(&mut self) {
-        todo!()
+        //todo!()
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        todo!()
+        // get new surface texture to render to
+        let output = self.surface.get_current_texture()?;
+
+        // create texture view with default settings to allow control of how the render code
+        // interacts with the texture
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // create command encoder to send commands to gpu (most modern graphics frameworks expects buffer)
+        // encoder builds a command buffer to send to the gpu
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
+
+        {
+            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(self.clearColor),
+                        store:wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+            });
+        }
+        // can use drop(_render_pass) to do same effect as {} wrapping around _render_pass
+
+        // submit will accept anything that implements IntoIter
+        self.queue.submit(std::iter::once(encoder.finish()));
+        output.present();
+
+        Ok(())
     }
 }
 
@@ -125,18 +182,43 @@ pub async fn run() {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == state.window().id() => match event {
-                WindowEvent::CloseRequested
-                | WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
-                            state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Escape),
-                            ..
-                        },
-                    ..
-                } => *control_flow = ControlFlow::Exit,
-                _ => {}
+            } if window_id == state.window().id() => if !state.input(event) {
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    WindowEvent::Resized(physical_size) => {
+                        state.resize(*physical_size);
+                    },
+                    WindowEvent::ScaleFactorChanged { new_inner_size , ..} => {
+                        // new_inner_size is &&mut so we have to dereference it twice
+                        state.resize(**new_inner_size);
+                    },
+                    _ => {}
+                }
+            },
+            Event::RedrawRequested(window_id) if window_id == state.window().id() => {
+                state.update();
+                match state.render() {
+                    Ok_ => {},
+                    // Reconfigure surface if lost
+                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                    // if out of memory, then quit
+                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
+                    // All other errors (Outdated, Timeout) should be resolved by the next frame
+                    Err(e) => eprintln!("{:?}", e),
+                }
+            },
+            Event::MainEventsCleared => {
+                // RedrawRequested will only trigger once unless we manually request it.
+                state.window().request_redraw();
             },
             _ => {}
         }
