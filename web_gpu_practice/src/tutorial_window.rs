@@ -10,7 +10,7 @@ use wgpu::util::DeviceExt;
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
-    postiion: [f32; 3],
+    position: [f32; 3],
     color: [f32; 3],
 }
 
@@ -46,11 +46,21 @@ impl Vertex {
     }
 }
 
-const VERTICIES: &[Vertex] = &[
-    Vertex {postiion: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0]},
-    Vertex {postiion: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0]},
-    Vertex {postiion: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0]},
+// lib.rs
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
+    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
+    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
+    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
+    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
 ];
+
+const INDICES: &[u16] = &[
+    0, 1, 4,
+    1, 2, 4,
+    2, 3, 4,
+];
+
 
 struct State {
     surface: wgpu::Surface,
@@ -66,6 +76,8 @@ struct State {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     num_verticies: u32,
+    index_buffer: wgpu::Buffer,
+    num_indicies: u32,
 }
 
 impl State {
@@ -192,12 +204,22 @@ impl State {
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICIES),
+                contents: bytemuck::cast_slice(VERTICES),
                 usage: wgpu::BufferUsages::VERTEX,
             }
         );
 
-        let num_verticies = VERTICIES.len() as u32;
+        let num_verticies = VERTICES.len() as u32;
+
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(INDICES),
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+
+        let num_indicies = INDICES.len() as u32;
 
         Self {
             window,
@@ -209,6 +231,8 @@ impl State {
             render_pipeline,
             vertex_buffer,
             num_verticies,
+            index_buffer,
+            num_indicies,
         }
     }
 
@@ -279,7 +303,8 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline); // 2 set pipeline to the one created earlier
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_verticies, 0..1); // 3 told wgpu to draw something with 3 verticies and 1 instance
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_indicies, 0, 0..1); // 3 told wgpu to draw something with 3 verticies and 1 instance
             // callback to @builtin(vertex_index)
         }
         // can use drop(_render_pass) to do same effect as {} wrapping around _render_pass
