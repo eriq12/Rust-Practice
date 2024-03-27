@@ -1,7 +1,7 @@
 // lib
 use winit::{
     event::*,
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::EventLoop,
     window::WindowBuilder,
 };
 use winit::window::Window;
@@ -62,8 +62,8 @@ const INDICES: &[u16] = &[
 ];
 
 
-struct State {
-    surface: wgpu::Surface,
+struct State<'a>{
+    surface: wgpu::Surface<'a>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -72,7 +72,7 @@ struct State {
      *  it gets dropped after it as the surface contains
      *  unsafe references to the window's resources.
      */
-    window: Window,
+    window: &'a Window,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     num_verticies: u32,
@@ -80,9 +80,9 @@ struct State {
     num_indicies: u32,
 }
 
-impl State {
+impl<'a> State <'a>{
     // Creating some of the wgpu types requires async code
-    async fn new(window: Window) -> Self {
+    async fn new (window: &'a Window) -> State<'a> {
         let size = window.inner_size();
 
         // The instance is a handle to the GPU
@@ -97,7 +97,7 @@ impl State {
          *  The surface needs to live as long as the window that created it.
          *  State owns the window, so this should be safe.
          */
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -111,10 +111,10 @@ impl State {
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
+                    required_features: wgpu::Features::empty(),
                     // WebGL doesn't support all of wgpu's features, so if
                     // are building for the web, we'll have to disable some.
-                    limits: if cfg!(target_arch = "wasm32") {
+                    required_limits: if cfg!(target_arch = "wasm32") {
                         wgpu::Limits::downlevel_webgl2_defaults()
                     } else {
                         wgpu::Limits::default()
@@ -127,6 +127,8 @@ impl State {
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
+        
+        let desired_maximum_frame_latency = 2;
 
         // Shader code in this tutorial assumes an sRGB surface texture. Using a different
         // one will result in all the colors coming out darker. If you want to support non
@@ -146,6 +148,7 @@ impl State {
             present_mode: surface_caps.present_modes[0],
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency,
         };
         surface.configure(&device, &config);
 
@@ -221,7 +224,7 @@ impl State {
 
         let num_indicies = INDICES.len() as u32;
 
-        Self {
+        State {
             window,
             surface,
             device,
@@ -249,7 +252,7 @@ impl State {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
+    fn input(&mut self, _event: &WindowEvent) -> bool {
         false
     }
 
@@ -320,12 +323,13 @@ impl State {
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
 pub async fn run() {
     env_logger::init();
-    let event_loop = EventLoop::new();
+    #[allow(unused_mut)]
+    let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let mut state = State::new(window).await;
+    let mut state = State::new(&window).await;
 
-    event_loop.run(move |event, _, control_flow| {
+    let _ = event_loop.run(move |event, target| {
         match event {
             Event::WindowEvent {
                 ref event,
@@ -333,43 +337,18 @@ pub async fn run() {
             } if window_id == state.window().id() => {
                 if !state.input(event) {
                     match event {
-                        WindowEvent::CloseRequested
-                        | WindowEvent::KeyboardInput {
-                            input:
-                                KeyboardInput {
-                                    state: ElementState::Pressed,
-                                    virtual_keycode: Some(VirtualKeyCode::Escape),
-                                    ..
-                                },
-                            ..
-                        } => *control_flow = ControlFlow::Exit,
+                        WindowEvent::CloseRequested => target.exit(),
                         WindowEvent::Resized(physical_size) => {
                             state.resize(*physical_size);
-                        }
-                        WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                            // new_inner_size is &&mut so we have to dereference it twice
-                            state.resize(**new_inner_size);
+                        },
+                        WindowEvent::RedrawRequested => {
+                            state.update();
+                            let _ = state.render();
                         }
                         _ => {}
                     }
                 }
-            }
-            Event::RedrawRequested(window_id) if window_id == state.window().id() => {
-                state.update();
-                match state.render() {
-                    Ok_ => {}
-                    // Reconfigure surface if lost
-                    Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                    // if out of memory, then quit
-                    Err(wgpu::SurfaceError::OutOfMemory) => *control_flow = ControlFlow::Exit,
-                    // All other errors (Outdated, Timeout) should be resolved by the next frame
-                    Err(e) => eprintln!("{:?}", e),
-                }
-            }
-            Event::MainEventsCleared => {
-                // RedrawRequested will only trigger once unless we manually request it.
-                state.window().request_redraw();
-            }
+            },
             _ => {}
         }
     });
