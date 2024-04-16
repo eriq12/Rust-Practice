@@ -179,7 +179,6 @@ struct CameraUniform {
 
 impl CameraUniform {
     fn new() -> Self {
-        use cgmath::SquareMatrix;
         Self {
             view_proj: cgmath::Matrix4::identity().into(),
         }
@@ -258,7 +257,6 @@ impl CameraController {
     }
 
     fn update_camera(&self, camera: &mut Camera) {
-        use cgmath::InnerSpace;
         let forward = camera.target - camera.eye;
         let forward_norm = forward.normalize();
         let forward_mag = forward.magnitude();
@@ -314,6 +312,7 @@ struct State<'a>{
     camera_controller: CameraController,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
+    depth_texture: texture::Texture,
 }
 
 // wasn't able to find too much on how to do explicit lifetimes properly
@@ -506,6 +505,8 @@ impl<'a> State <'a>{
             }
         );
 
+        let depth_texture = texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -553,7 +554,15 @@ impl<'a> State <'a>{
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None, // 1 no depth or stencil buffer in use currently
+            // 1 no depth or stencil buffer in use currently
+            // (NEW depth_buffer) to address objects being drawn over objects that should be in front of it:
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }), 
             multisample: wgpu::MultisampleState {
                 count: 1, // 2 how many samples for pipeline to use
                 mask: !0, // 3 which samples should be active
@@ -626,6 +635,7 @@ impl<'a> State <'a>{
             camera_controller,
             instances,
             instance_buffer,
+            depth_texture,
         }
     }
 
@@ -639,6 +649,7 @@ impl<'a> State <'a>{
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.surface.configure(&self.device, &self.config);
+            self.depth_texture = texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture")
         }
     }
 
@@ -687,7 +698,14 @@ impl<'a> State <'a>{
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations{
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
@@ -714,6 +732,10 @@ impl<'a> State <'a>{
 
         Ok(())
     }
+
+    fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
 }
 
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen(start))]
@@ -735,8 +757,7 @@ pub async fn run() {
                 ..
             } => target.exit(),
             Event::AboutToWait => {
-                state.update();
-                let _ = state.render();
+                state.request_redraw();
             },
             Event::WindowEvent {
                 ref event,
@@ -749,6 +770,8 @@ pub async fn run() {
                         },
                         WindowEvent::RedrawRequested => {
                             // moved from here to Event::AboutToWait as I presume redraw isn't being called
+                            state.update();
+                            let _ = state.render();
                         }
                         _ => {}
                     }
