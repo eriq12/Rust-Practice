@@ -1,5 +1,17 @@
 fn main() {
     print!("{}\n", string_bigger_than_other("b", "ab"));
+    let mut list : Vec<char> = vec!['a';1];
+    match (list.pop(), list.pop()) {
+        (Some(one), Some(two)) => {
+            print!("one: {}, two:{}\n", one, two);
+        },
+        (Some(val), None) | (None, Some(val)) => {
+            print!("Only one: {}\n", val);
+        }
+        _ => {
+            print!("Nothing!\n");
+        }
+    }
 }
 
 pub fn string_bigger_than_other(string_one: &str, string_two: &str) -> bool{
