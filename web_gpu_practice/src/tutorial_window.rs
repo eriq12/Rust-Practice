@@ -635,12 +635,9 @@ impl<'a> State <'a>{
 
             render_pass.set_pipeline(&self.render_pipeline); // set pipeline to the one created earlier
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-
-            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.camera_bind_group, &[]);
             
             use model::DrawModel;
-            render_pass.draw_mesh_instanced(&self.obj_model.meshes[0], 0..self.instances.len() as u32);
+            render_pass.draw_model_instanced(&self.obj_model, 0..self.instances.len() as u32, &self.camera_bind_group);
             // old:
             // told wgpu to draw something with 3 verticies and 1 instance
             // callback to @builtin(vertex_index)
