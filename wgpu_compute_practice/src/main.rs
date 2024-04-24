@@ -47,7 +47,7 @@ async fn run() {
     println!("Shader compliation {:?}", start_instant.elapsed());
 
     // input and output_buffers
-    let input_f = &[1.0f32, 2.0f32];
+    let input_f = &[1.0f32; 32];
     let input: &[u8] = bytemuck::bytes_of(input_f);
     //buffer that holds inputf as bytes
     let input_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -61,7 +61,16 @@ async fn run() {
     let output_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: input.len() as u64, // makes sure the lengths of the buffers match
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        usage: wgpu::BufferUsages::STORAGE
+            | wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+
+    let output_staging_buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: input.len() as u64,
+        usage:  wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
     // buffer for query results
@@ -82,16 +91,28 @@ async fn run() {
     // define layout of bind group
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty:wgpu::BufferBindingType::Storage { read_only: false },
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty:wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty:wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None
+            },
+        ],
     });
 
     // define layout of compute_pipeline
@@ -113,10 +134,16 @@ async fn run() {
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &bind_group_layout,
-        entries: &[wgpu::BindGroupEntry{
-            binding: 0,
-            resource: input_buf.as_entire_binding(),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry{
+                binding: 0,
+                resource: input_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry{
+                binding: 1,
+                resource: output_buf.as_entire_binding(),
+            },
+        ],
     });
 
     let mut encoder = device.create_command_encoder(&Default::default());
@@ -135,7 +162,7 @@ async fn run() {
     if let Some(query_set) = &query_set {
         encoder.write_timestamp(query_set, 1);
     }
-    encoder.copy_buffer_to_buffer(&input_buf, 0, &output_buf, 0, input.len() as u64);
+    encoder.copy_buffer_to_buffer(&output_buf, 0, &output_staging_buf, 0, input.len() as u64);
     // write results of timestamps? to destination query buffer
     if let Some(query_set) = &query_set {
         encoder.resolve_query_set(query_set, 0..2, &query_buf, 0);
@@ -144,7 +171,7 @@ async fn run() {
     // submit all commands to queue to begin
     queue.submit(Some(encoder.finish()));
 
-    let buf_slice = output_buf.slice(..);
+    let buf_slice = output_staging_buf.slice(..);
     let (sender, receiver) = futures_intrusive::channel::shared::oneshot_channel();
     // (from the repo) assumes both buffers will be available at the same time
     // to be more careful, wait for both notifications to be sent first
