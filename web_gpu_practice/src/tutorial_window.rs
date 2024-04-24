@@ -236,7 +236,6 @@ struct State<'a>{
      */
     window: &'a Window,
     render_pipeline: wgpu::RenderPipeline,
-    diffuse_bind_group: wgpu::BindGroup,
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -330,9 +329,6 @@ impl<'a> State <'a>{
 
         surface.configure(&device, &config);
 
-        let diffuse_bytes = include_bytes!("happy-tree.png");
-        let diffuse_texture = texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "happy-tree.png").unwrap();
-
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -357,23 +353,6 @@ impl<'a> State <'a>{
                 ],
                 label: Some("texture_bind_group_layout"),
             });
-        
-        let diffuse_bind_group = device.create_bind_group(
-            &wgpu::BindGroupDescriptor {
-                layout: &texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                    },
-                ],
-                label: Some("diffuse_bind_group") ,
-            },
-        );
 
         let camera = Camera {
             // position the camera 1 unit up and 2 units back
@@ -535,7 +514,7 @@ impl<'a> State <'a>{
             }
         );
 
-        let obj_model =
+        let obj_model : model::Model = 
             resources::load_model("cube.obj", &device, &queue, &texture_bind_group_layout)
             .await
             .unwrap();
@@ -549,7 +528,6 @@ impl<'a> State <'a>{
             config,
             size,
             render_pipeline,
-            diffuse_bind_group,
             camera,
             camera_uniform,
             camera_buffer,
